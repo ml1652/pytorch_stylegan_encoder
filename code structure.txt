@@ -1,0 +1,70 @@
+Regressor training, regressing from VGG features to StyleGAN latent vector:
+- Data is generated in following way:
+    Generate 'Z' latent vector with ....randn, ...
+    Z ... --> ...
+
+Optimisation:
+-------------
+Original pytorch_stylegan_encoder does this:
+optimize_latents(): Uses Z from randn, not normalised <-- Just an EXAMPLE, double-check!
+
+Mingrui code - optimising with VGGFace2:
+-------
+optimize_latents():
+    input image --> vgg_processing() --> vgg——face_dag()  --> ...
+    LatentOptimizerVGGface: dlatents (Z?) --> mapping --> truncation .....
+        easy_synthesize():
+            .... z ... --> ....
+
+
+LatentOptimizerVGGface(latents_to_be_optimized):
+    --> synthesizer(latents_to_be_optimized) -->
+        SynthesisModule(stylegan_generator_model)
+    -->post_synthesis_processing()
+        generated_image = (generated_image -min_value) *255/(max_value - min_value)
+    -->vgg_processing(generated_image)
+        adaptive_avg_pool2d() -->image = (image-mean)/std
+    -->vgg_face_dag()
+    -->return features
+
+
+encode_image.py: optimize_latents():
+
+if vggface: --> latent_optimizer = LatentOptimizerVGGface()
+            --> reference_image = vgg_processing()
+            --> reference_features = vgg_face_dag()
+else:       --> latent_optimizer = LatentOptimizer()
+            --> reference_image = vgg_processing()
+            --> reference_features = vgg16()
+
+if use_latent_finder:
+    -->ImageToLatent(reference_image)
+elif vgg_to_latent_model:
+    if latent_type == 'Z':
+        --> vgg_processing() --> vgg_face_dag()  -->vgg_to_latent() -->np.linalg.norm() -->latents_to_be_optimized / norm * np.sqrt(latent_space_dim)
+        --> mapping() -->truncation()
+    else latent_type == 'WP':
+        --> vgg_processing() -->vgg_face_dag() -->vgg_to_latent()
+else :
+     torch.zeros((1, 18, 512))
+
+if vgg_identityLoss:
+    criterion= IdentityLoss()
+else:
+    criterion = LatentLoss()
+
+for iterations:
+    latent_optimizer(latents_to_be_optimized) -->loss = criterion(generated_image_features, reference_features) -->loss.backward()
+
+
+
+generate_data: model.easy_synthesize:",
+    easy_synthesize(base_generator.py)
+    --> synthesize(stylegan_generator.py)
+    --> elif latent_space_type == "WP",
+    results['wp'] = latent_codes"
+    -->if generate_image",
+    --> model.sythesis(stylegan_generator_model.SynthesisModule)"
+
+
+

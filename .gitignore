@@ -5,3 +5,20 @@ __pycache__
 image_to_latent.pt
 dlatents.npy
 notes.txt
+
+AFLW_vggface2
+AFLW_vggface2_tightcrop_flip
+alignment_image_for_test
+celeba_vggface2
+tesnsor_board_pose_regressor_model
+vgg_latent_model
+/*.pt
+zeros image
+/video.avi
+/*.pth
+.idea/dataSources.xml
+/*.jpg
+/*.png
+*.npy
+*.npz
+utilities/*.jpg
