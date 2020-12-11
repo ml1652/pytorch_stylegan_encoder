@@ -19,12 +19,12 @@ from tensorboardX import SummaryWriter
 import os
 from utilities.pytorchtools import EarlyStopping
 from natsort import natsorted
-
+import pandas as pd
 early_stop = False
 absolute_label = False
 data_augmentation = False
-single_yaw = True
-epochs = 40
+single_yaw = False
+epochs = 5
 
 from PIL import Image
 
@@ -38,6 +38,7 @@ def generate_vgg_descriptors(filenames):
 
     for image_file in filenames:
         print(image_file)
+        image_file = image_directory + image_file
         image = load_images([image_file])
 
 
@@ -59,13 +60,21 @@ if data_augmentation:
     # pose = [roll, pitch, yaw]
     poses = np.load("D:/AFLW/numpylist2/pose_data_with_name_flip.npz", allow_pickle=True)
 else:
-    image_directory = "C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/celeba_vggface2/"
-    poses = np.load("D:/AFLW/numpylist2/pose_data_with_name.npz", allow_pickle=True)
+    image_directory = r"C:\Users\Mingrui\Desktop\Github\HD-CelebA-Cropper\data\aligned\align_size(512,512)_move(0.250,0.000)_face_factor(0.500)_jpg\data\\"
+    #poses = np.load("D:/AFLW/numpylist2/pose_data_with_name.npz", allow_pickle=True)
+    poses = pd.read_csv(r"C:\Users\Mingrui\Desktop\Github\HD-CelebA-Cropper\data\aligned\align_size(512,512)_move(0.250,0.000)_face_factor(0.500)_jpg\out_pose_label.txt",sep=' ',
+            header=None)
 
-# [filenames, pose_sets] = poses
-filenames = poses['path']
-pose_sets = np.stack(poses['pose'])
+    #poses = pd.read_table(r"C:\Users\Mingrui\Desktop\Github\HD-CelebA-Cropper\data\aligned\align_size(512,512)_move(0.250,0.000)_face_factor(0.500)_jpg\out_pose_label.txt",header=None)
 
+# # [filenames, pose_sets] = poses
+# filenames = poses['path']
+# pose_sets = np.stack(poses['pose'])
+
+data = poses.to_numpy()
+filenames = data[:, 0].tolist()
+pose_sets = data[:, 1:].tolist()
+pose_sets = np.stack(pose_sets)
 # generae the vgg descriptor
 #descriptor_file = f"D:/AFLW/numpylist/pose_data_flip={data_augmentation}.npy"
 #descriptor_file = image_directory+f"/pose_data_absolute_label={absolute_label}_singlegangel={single_yaw}_flip={data_augmentation}.npy"
@@ -86,7 +95,7 @@ filenames, pose_sets, descriptor = shuffle(filenames, pose_sets, descriptor)
 
 image_size = 224
 total_dataset_num = len(filenames)
-num_validationsets = 1
+num_validationsets = 10000
 num_trainsets = total_dataset_num - num_validationsets
 
 # setting to learn the single yaw angle alone
@@ -107,8 +116,10 @@ if absolute_label:
 train_descriptors = descriptor[0:num_trainsets]
 validation_descriptors = descriptor[num_trainsets:]
 
-train_dataset = VGGLatentDataset(train_descriptors, pose_sets)
-validation_dataset = VGGLatentDataset(validation_descriptors, pose_sets)
+# train_dataset = VGGLatentDataset(train_descriptors, pose_sets)
+# validation_dataset = VGGLatentDataset(validation_descriptors, pose_sets)
+train_dataset = VGGLatentDataset(train_descriptors, train_pose)
+validation_dataset = VGGLatentDataset(validation_descriptors, validation_pose)
 
 train_generator = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
 validation_generator = torch.utils.data.DataLoader(validation_dataset, batch_size=32, shuffle=True)

@@ -1,3 +1,5 @@
+#速度过慢，使用HD-celebA-cropper中的align.py代替
+
 import os
 import cv2
 import numpy as np

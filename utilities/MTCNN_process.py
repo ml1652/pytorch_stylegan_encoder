@@ -27,7 +27,7 @@ def largest_bbox(bboxes):
     return box
 
 
-image_directory = 'C:/Users/Mingrui/Desktop/datasets/n000106/'
+image_directory = r"C:\Users\Mingrui\Desktop\datasets\\"
 image_save_path = 'C:/Users/Mingrui/Desktop/datasets/n000106/MTCNN_processed/'
 
 

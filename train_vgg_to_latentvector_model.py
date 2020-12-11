@@ -124,6 +124,8 @@ for epoch in progress_bar:
 writer.close()
 #plot loss
 
+# x, y
+
 y1 = Traning_loss
 y2 = Validation_loss
 plt.subplot(2, 1, 1)

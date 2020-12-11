@@ -1,4 +1,4 @@
-from models.image_to_latent import PoseRegressor, VGGLatentDataset
+from models.image_to_latent import PoseRegressor, VGGLatentDataset,CelebaRegressor
 from models.latent_optimizer import VGGFaceProcessing
 from models.vgg_face2 import resnet50_scratch_dag
 import torch
@@ -13,9 +13,9 @@ vgg_processing = VGGFaceProcessing()
 vgg_face_dag = resnet50_scratch_dag(r'C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\resnet50_scratch_dag.pth').cuda().eval()
 
 output_count = 3
-
-pose_regressor = PoseRegressor(output_count).cuda()
-pose_regressor.load_state_dict(torch.load(r"C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\pose_regressor_absolutelabel=False_singlegangel=False_flip=False.pt"))
+#pose_regressor = PoseRegressor(output_count).cuda()
+pose_regressor = CelebaRegressor().cuda()
+pose_regressor.load_state_dict(torch.load(r"C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\celebaregressorSmiling.pt"))
 pose_regressor.eval()
 for i in filenames:
     image = load_images([i])

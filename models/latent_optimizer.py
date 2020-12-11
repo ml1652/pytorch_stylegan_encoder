@@ -84,7 +84,8 @@ class VGGFaceProcessing(torch.nn.Module):
     def forward(self, image):
         #image = image / torch.tensor(255).float()
         image = image.float()
-        image = F.adaptive_avg_pool2d(image, self.image_size)
+        if image.shape[0] != 224  or image.shape[1] != 224:
+            image = F.adaptive_avg_pool2d(image, self.image_size)
 
         image = (image - self.mean) / self.std  # value from: vgg[-2.0172 - 2.2489] vggface[-129 - -92]
 
