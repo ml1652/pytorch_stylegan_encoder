@@ -7,6 +7,9 @@ import numpy as np
 from torchvision import transforms
 from PIL import Image
 from InterFaceGAN.models.stylegan_generator import StyleGANGenerator
+from models.image_to_latent import ImageToLandmarks
+
+
 import torch
 
 class PostSynthesisProcessing(torch.nn.Module):
@@ -84,7 +87,7 @@ class VGGFaceProcessing(torch.nn.Module):
     def forward(self, image):
         #image = image / torch.tensor(255).float()
         image = image.float()
-        if image.shape[0] != 224  or image.shape[1] != 224:
+        if image.shape[2] != 224  or image.shape[3] != 224:
             image = F.adaptive_avg_pool2d(image, self.image_size)
 
         image = (image - self.mean) / self.std  # value from: vgg[-2.0172 - 2.2489] vggface[-129 - -92]
@@ -112,6 +115,44 @@ class LatentOptimizerVGGface(torch.nn.Module):
 
         return features
 
+class LatentOptimizerLandmarkRegressor(torch.nn.Module):
+    def __init__(self, synthesizer, layer=12):
+        super().__init__()
+
+        self.synthesizer = synthesizer.cuda().eval()
+
+        self.post_synthesis_processing = PostSynthesisProcessing()
+        self.vgg_processing = VGGFaceProcessing()
+        self.vgg_face_dag = resnet50_scratch_dag('./resnet50_scratch_dag.pth').cuda().eval()
+        self.weights_path = "./Trained_model/Image_to_landmarks_Regressor.pt"
+        self.landmark_regressor = ImageToLandmarks(landmark_num = 68).cuda().eval()
+    def forward(self, dlatents):
+        image_size = 64
+        style_gan_transformation = transforms.Compose([
+            transforms.ToPILImage(),
+            transforms.Resize(image_size),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225])
+        ])
+        generated_image = self.synthesizer(dlatents) #dim [1,3,1024,1024]
+        generated_image = self.post_synthesis_processing(generated_image)
+        self.landmark_regressor.load_state_dict(torch.load(self.weights_path))
+
+        out = []
+        for x_ in generated_image.cpu():
+            out.append(style_gan_transformation(x_))
+        generated_image = torch.stack(out).cuda()
+
+        # generated_image = to_pil(generated_image)
+        # # generated_image = transforms.ToTensor()(style_gan_transformation(transforms.ToPILImage()(generated_image)))
+        # generated_image = style_gan_transformation(generated_image)
+        features = self.landmark_regressor(generated_image).requires_grad_()
+
+        return features
+
+
+
 class LatentOptimizerVGGface2(torch.nn.Module):
     def __init__(self, mappinglayer,truncationlayer,synthesizer, layer=12):
         super().__init__()
@@ -122,7 +163,7 @@ class LatentOptimizerVGGface2(torch.nn.Module):
 
         self.post_synthesis_processing = PostSynthesisProcessing()
         self.vgg_processing = VGGFaceProcessing()
-        self.vgg_face_dag = resnet50_scratch_dag(r'C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\resnet50_scratch_dag.pth').cuda().eval()
+        self.vgg_face_dag = resnet50_scratch_dag('./resnet50_scratch_dag.pth').cuda().eval()
 
 
 
@@ -145,7 +186,7 @@ class LatentOptimizerVGGface3(torch.nn.Module):
 
         self.post_synthesis_processing = PostSynthesisProcessing()
         self.vgg_processing = VGGFaceProcessing()
-        self.vgg_face_dag = resnet50_scratch_dag(r'C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\resnet50_scratch_dag.pth').cuda().eval()
+        self.vgg_face_dag = resnet50_scratch_dag('./resnet50_scratch_dag.pth').cuda().eval()
 
 
 
@@ -166,7 +207,7 @@ def LatentOptimizerVGGface_vgg_to_latent2(dlatents):
 
     post_synthesis_processing = PostSynthesisProcessing()
     vgg_processing = VGGFaceProcessing()
-    vgg_face_dag = resnet50_scratch_dag(r'C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\resnet50_scratch_dag.pth').cuda().eval()
+    vgg_face_dag = resnet50_scratch_dag('./resnet50_scratch_dag.pth').cuda().eval()
 
     kwargs = {'latent_space_type': 'W'}
     model = StyleGANGenerator('stylegan_ffhq')
@@ -202,7 +243,7 @@ class LatentOptimizerVGGface_vgg_to_latent(torch.nn.Module):
         self.synthesizer = synthesizer
         self.post_synthesis_processing = PostSynthesisProcessing()
         self.vgg_processing = VGGFaceProcessing()
-        self.vgg_face_dag = resnet50_scratch_dag(r'C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\resnet50_scratch_dag.pth').cuda().eval()
+        self.vgg_face_dag = resnet50_scratch_dag('./resnet50_scratch_dag.pth').cuda().eval()
         self.kwargs = {'latent_space_type': 'W'}
 
 
@@ -226,7 +267,7 @@ class LatentOptimizerVGGface2(torch.nn.Module):
         self.synthesizer = synthesizer.cuda().eval()
         self.post_synthesis_processing = PostSynthesisProcessing()
         self.vgg_processing = VGGFaceProcessing()
-        self.vgg_face_dag = vgg_face_dag(r'C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\vgg_face_dag.pth').cuda().eval()
+        self.vgg_face_dag = vgg_face_dag('./vgg_face_dag.pth').cuda().eval()
 
 
 
@@ -253,7 +294,7 @@ class LatentOptimizer(torch.nn.Module):
         #dlatents = dlatents / torch.sqrt(torch.mean(dlatents ** 2, dim=1, keepdim=True) + epsilon)
         generated_image = self.synthesizer(dlatents)
         generated_image = self.post_synthesis_processing(generated_image) #the value between 0-255, dim = [1,3,1024,1024]
-        generated_image = self.vgg_processing(generated_image)  #value between 2.5344 and -2.1179 , dim = [1,3,256,256]
+        generated_image = self.VGGProcessing()(generated_image)  #value between 2.5344 and -2.1179 , dim = [1,3,256,256]
         features = self.vgg16(generated_image) #value beteween 0-72.4174,   dim = [1,256,64.64]
 
         return features

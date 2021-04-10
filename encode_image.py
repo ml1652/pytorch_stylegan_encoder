@@ -3,9 +3,10 @@ from tqdm import tqdm
 import numpy as np
 import torch
 from InterFaceGAN.models.stylegan_generator import StyleGANGenerator
-from models.latent_optimizer import LatentOptimizer,LatentOptimizerVGGface
+from models.latent_optimizer import LatentOptimizer,LatentOptimizerVGGface,LatentOptimizerLandmarkRegressor
 from models.image_to_latent import ImageToLatent
 from models.image_to_latent import VGGToLatent, VGGLatentDataset,PoseRegressor
+from torchvision import transforms
 
 from models.losses import LatentLoss,IdentityLoss
 from utilities.hooks import GeneratedImageHook
@@ -13,6 +14,8 @@ from utilities.images import load_images, images_to_video, save_image
 from utilities.files import validate_path
 from models.latent_optimizer import VGGFaceProcessing,LatentOptimizerVGGface_vgg_to_latent
 from models.vgg_face2 import resnet50_scratch_dag
+
+from models.image_to_latent import ImageToLandmarks
 
 parser = argparse.ArgumentParser(description="Find the latent space representation of an input image.")
 parser.add_argument("image_path", help="Filepath of the image to be encoded.")
@@ -23,7 +26,7 @@ parser.add_argument("--optimized_image_path", default="optimized.png", help="The
 parser.add_argument("--video", default=False, help="Whether or not to save a video of the encoding process.", type=bool)
 parser.add_argument("--video_path", default="video.avi", help="Where to save the video at.", type=str)
 parser.add_argument("--save_frequency", default=10, help="How often to save the images to video. Smaller = Faster.", type=int)
-parser.add_argument("--iterations", default=1000, help="Number of optimizations steps.", type=int)
+parser.add_argument("--iterations", default=5, help="Number of optimizations steps.", type=int)
 parser.add_argument("--model_type", default="stylegan_ffhq", help="The model to use from InterFaceGAN repo.", type=str)
 parser.add_argument("--learning_rate", default=1, help="Learning rate for SGD.", type=int)
 parser.add_argument("--vgg_layer", default=12, help="The VGG network layer number to extract features from.", type=int)
@@ -33,15 +36,18 @@ parser.add_argument("--get_firstimage", default="first_image.png", help="The pat
 parser.add_argument("--use_vggfacelatent_finder", default=False, help="Whether or not to use a vggface latent finder to find the starting latents to optimize from.", type=bool)
 parser.add_argument("--vggface_to_latent_path", default="vgg_to_latent.pt", help="The path to the vggface latent finder model.", type=str)
 
-
-
+#C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\alignment_img23.jpg
+#C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/Croped_StyleGAN_Datasets/align_size(224,224)_move(0.250,0.000)_face_factor(0.800)_jpg/data/000001.jpg
+#C:/Users/Mingrui/Desktop/datasets/StyleGANimge_corp/webimage_alignmentTest/alignment_img01.jpg
+#C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/alignment_image_for_test/alignment_img01.jpg
 args, other = parser.parse_known_args()
 
 vggface = True  #use vggface pretrained model
-vgg_identityLoss = True# use identitylkoss to replace perceptual loss
+vgg_identityLoss = False# use identitylkoss to replace perceptual loss
 CompleteStyleGAN = False # Use the complete styleGAn network
 vgg_to_latent_model = True #'vgg_to_latent' and 'use_latent_finder' are mutex
 pose_regressor_model = False
+styleGAN_landmark = True
 latent_type = 'WP'
 
 def optimize_latents():
@@ -67,6 +73,9 @@ def optimize_latents():
 
         synthesizer = StyleGANGenerator(args.model_type).model.synthesis
         latent_optimizer = LatentOptimizerVGGface(synthesizer, args.vgg_layer)
+    elif styleGAN_landmark:
+        synthesizer = StyleGANGenerator(args.model_type).model.synthesis
+        latent_optimizer = LatentOptimizerLandmarkRegressor(synthesizer, args.vgg_layer)
 
     else:
         synthesizer = StyleGANGenerator(args.model_type).model.synthesis
@@ -80,7 +89,21 @@ def optimize_latents():
         # Hook, saves an image during optimization to be used to create video.
         generated_image_hook = GeneratedImageHook(latent_optimizer.post_synthesis_processing, args.save_frequency)
 
-    reference_image = load_images([args.image_path])
+    image_size = 64
+    style_gan_transformation = transforms.Compose([
+        transforms.Resize(image_size),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+    ])
+    reference_image = load_images(
+        [args.image_path],
+        style_gan_transformation if styleGAN_landmark else None
+    )
+
+    # if styleGAN_landmark:
+    #     reference_image = [apply_transformation(reference_image) for img in reference_image]
+
     reference_image = torch.from_numpy(reference_image).cuda()         #reference_image pixel value: 0-255
 
 
@@ -91,9 +114,15 @@ def optimize_latents():
         reference_image = latent_optimizer.vgg_processing(reference_image)
         reference_features = latent_optimizer.vgg_face_dag(reference_image).detach()  # vggface:x12 the value between 0-172.6192  dim = [1,256,56,56]
         # pool5_7x7_s1 dim = [1, 2048, 1, 1]
+
+    elif styleGAN_landmark:
+        weights_path = r"C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\Trained_model\Image_to_landmarks_Regressor.pt"
+        landmark_regressor = ImageToLandmarks(landmark_num=68).cuda().eval()
+        landmark_regressor.load_state_dict(torch.load(weights_path))
+        reference_features = landmark_regressor(reference_image).detach() #referecne:max = 2.25 min=-1.9
     else:
         reference_image = latent_optimizer.vgg_processing(reference_image)  # vgg16: the vlaue between -2.04 - 2.54,dim = [1,3,256,256]
-        reference_features = latent_optimizer.vgg16(reference_image).detach()         #vgg16: the value between 0-60.6167  dim = [1,256,64,64]
+        reference_features = latent_optimizer.vgg16(reference_image).detach()
 
     reference_image = reference_image.detach()
 
@@ -142,7 +171,8 @@ def optimize_latents():
 
         elif latent_type == 'WP':
             vgg_to_latent = VGGToLatent().cuda()
-            vgg_to_latent.load_state_dict(torch.load("vgg_to_latent_WP.pt"))
+            vgg_to_latent.load_state_dict(torch.load("vgg_to_latent_WP_styleGAN.pt"))
+            #vgg_to_latent.load_state_dict(torch.load("vgg_to_latent_WP.pt"))
             vgg_to_latent.eval()
             vgg_face_dag = resnet50_scratch_dag(
                 r'C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\resnet50_scratch_dag.pth').cuda().eval()
@@ -259,6 +289,8 @@ def optimize_latents():
 
     if vgg_identityLoss:
         criterion= IdentityLoss()
+    elif styleGAN_landmark:
+        criterion = torch.nn.MSELoss()
     else:
         criterion = LatentLoss()
     optimizer = torch.optim.SGD([latents_to_be_optimized], lr=args.learning_rate)
@@ -270,6 +302,8 @@ def optimize_latents():
 
         generated_image_features = latent_optimizer(latents_to_be_optimized) #vgg16: the value 0- 53.79: dim = [1,256,64,64]
                                                                              #vggface: the value 0- 36833.3398: dim = [1,256,56,56]
+
+
         loss = criterion(generated_image_features, reference_features)
         loss.backward()
         loss = loss.item()

@@ -20,42 +20,70 @@ import torch.utils.data as Data
 import matplotlib.pyplot as plt
 from utilities.images import load_images, images_to_video, save_image
 from tensorboardX import SummaryWriter
+import os
 
 writer = SummaryWriter('vgg_latent_model')
 
-image_size = 224
-num_trainsets = 48000
-directory = "C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/InterFaceGAN/dataset_directory/"
+#num_trainsets = 48000
+num_trainsets = 47800
+#directory = "C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/InterFaceGAN/dataset_directory/"
+Inserver = False
+
+if Inserver == True:
+    import matplotlib
+    matplotlib.use('Agg')
+    directory = "/scratch/staff/ml1652/StyleGAN_Reconstuction_server/Croped_StyleGAN_Datasets/align_size(224,224)_move(0.250,0.000)_face_factor(0.800)_jpg/data/"
+else:
+    directory = "C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/Croped_StyleGAN_Datasets/align_size(224,224)_move(0.250,0.000)_face_factor(0.800)_jpg/data/"
+    #directory = "C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/InterFaceGAN/dataset_directory/"
 filenames = sorted(glob(directory + "*.jpg"))
 
+
+
+#(filenames[1].split('\\')[-1]).split('.')[0]
 #train_filenames = filenames[0:num_trainsets]
 #validation_filenames = filenames[num_trainsets:]
 #validation_filenames = filenames[num_trainsets:]
 dlatents = np.load(directory + "WP.npy")
+final_dlatents = []
+for i in filenames :
+    name = int((i.split('\\')[-1]).split('.')[0])
+    final_dlatents.append(dlatents[name])
+dlatents = np.array(final_dlatents)
+
+
 
 train_dlatents = dlatents[0:num_trainsets]
 validation_dlatents = dlatents[num_trainsets:]
 
 # ##################################################
-# vgg_face_dag = resnet50_scratch_dag(r'C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\resnet50_scratch_dag.pth').cuda().eval()
-# descriptors = []
-# vgg_processing = VGGFaceProcessing()
-#
-# filenames = filenames[0:50000]
-# for i in filenames:
-#     image = load_images([i])
-#     image = torch.from_numpy(image).cuda()
-#     image = vgg_processing(image)  # vgg16: the vlaue between -2.04 - 2.54,dim = [1,3,256,256]
-#     feature = vgg_face_dag(image).cpu().detach().numpy()
-#
-#     descriptors.append(feature) #descriptor[128, 28, 28] pool5_7x7_s1:[2048,1,1]
-#
-# save_path = (directory + 'descriptors.npy')
-# np.save(save_path, np.concatenate(descriptors, axis=0))
+def generate_vgg_descriptors(filenames):
+    if Inserver == True:
+        vgg_face_dag = resnet50_scratch_dag(
+            '/scratch/staff/ml1652/StyleGAN_Reconstuction_server/Pretrained_model/resnet50_scratch_dag.pth').cuda().eval()
+    else:
+        vgg_face_dag = resnet50_scratch_dag(r'C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\resnet50_scratch_dag.pth').cuda().eval()
+    descriptors = []
+    vgg_processing = VGGFaceProcessing()
+
+    filenames = filenames[0:50000]
+    for i in filenames:
+        image = load_images([i]) #image value: (0,256)
+        image = torch.from_numpy(image).cuda() #image value: (0,256)
+        image = vgg_processing(image)  # vgg16: the vlaue between -2.04 - 2.54,dim = [1,3,256,256]
+        feature = vgg_face_dag(image).cpu().detach().numpy()
+        descriptors.append(feature) #descriptor[128, 28, 28] pool5_7x7_s1:[2048,1,1]
+    return np.concatenate(descriptors, axis=0)
+
+#np.save(save_path, np.concatenate(descriptors, axis=0))
 # ######################################################
+descriptor_file = directory + 'descriptors.npy'
 
-
-descriptor = np.load(directory + "descriptors.npy")
+if os.path.isfile(descriptor_file):
+    descriptor = np.load(directory + "descriptors.npy")
+else:
+    descriptor = generate_vgg_descriptors(filenames)
+    np.save(descriptor_file, descriptor)
 #descriptor = Data.TensorDataset(descriptor)
 
 train_descriptors = descriptor[0:num_trainsets]
@@ -70,9 +98,12 @@ validation_generator = torch.utils.data.DataLoader(validation_dataset, batch_siz
 # Instantiate Model
 vgg_to_latent = VGGToLatent().cuda()
 optimizer = torch.optim.Adam(vgg_to_latent.parameters(),lr=0.001)
-#criterion = LogCoshLoss()
-criterion = torch.nn.MSELoss()
 
+def criterion(feat1, feat2):
+    # maximize average magnitude of cosine similarity
+    return -torch.nn.functional.cosine_similarity(feat1, feat2).abs().mean()
+#criterion = torch.nn.MSELoss()
+#criterion = LogCoshLoss()
 # Train Model
 epochs = 20
 validation_loss = 0.0
@@ -110,6 +141,8 @@ for epoch in progress_bar:
         with torch.no_grad():
             vgg_descriptors, latents = vgg_descriptors.cuda(), latents.cuda()
             pred_latents = vgg_to_latent(vgg_descriptors)
+
+
             loss = criterion(pred_latents, latents)
 
             validation_loss += loss.item()
@@ -136,13 +169,15 @@ plt.subplot(2, 1, 2)
 plt.plot( y2, '.-')
 plt.xlabel('validation loss vs. epoches')
 plt.ylabel('validation loss')
-plt.savefig("accuracy_loss.jpg")
-plt.show()
+plt.savefig("vgg_to_latent_accuracy_loss_stylegancroped_cosinesimiliarty.jpg")
+#plt.show()
 
 
 # save moodel
-torch.save(vgg_to_latent.state_dict(), "C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/vgg_to_latent_Z_01.pt")
-
+if  Inserver == True:
+    torch.save(vgg_to_latent.state_dict(), '/scratch/staff/ml1652/StyleGAN_Reconstuction_server/vgg_to_latent_WP_styleGAN.pt')
+else:
+    torch.save(vgg_to_latent.state_dict(), "C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/Trained_model/vgg_to_latent_stylegancrop_cosinesimiliarty.pt")
 # load Model
 '''
 vgg_to_latent = VGGToLatent().cuda()

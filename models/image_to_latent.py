@@ -32,6 +32,9 @@ class ImageToLatent(torch.nn.Module):
         return x
 
 
+
+
+
 class VGGToLatent(torch.nn.Module):
     def __init__(self):
         super(VGGToLatent,self).__init__()
@@ -92,8 +95,43 @@ class PoseRegressor(torch.nn.Module):
         x = x.view((-1, self.output_count))
         return x
 
+class VGGToHist(torch.nn.Module):
+    def __init__(self, bins_num = 20):
+        super(VGGToHist,self).__init__()
+        '''
+        self.flatten = torch.nn.Flatten()
+        #self.dense1 = torch.nn.Linear(100352, 224) # 100352 = 128X28X28
+        self.dense1 = torch.nn.Linear(2048, 2048)  # pool layer2048 = 2048X1X1
+        #self.dense2 = torch.nn.Linear(224, (18 * 512))
+        self.dense2 = torch.nn.Linear(2048,  2048)
+        self.dense3 = torch.nn.Linear(2048, 512)
+        '''
+        self.bins_num = bins_num
+        self.flatten = torch.nn.Flatten()
+        self.dense1 = torch.nn.Linear(2048, 2048)  # pool layer2048 = 2048X1X1
+        self.relu1 = torch.nn.ReLU()
+        self.dense2 = torch.nn.Linear(2048, 2048)
+        self.relu2 = torch.nn.ReLU()
+        #self.dense3 = torch.nn.Linear(2048, 512)
+        self.dense3 = torch.nn.Linear(2048, (3*bins_num))
+        self.relu3 = torch.nn.ReLU()
+        self.softMax = torch.nn.Softmax(dim = 2)
+    def forward(self, latent):
+        x = self.flatten(latent)
+        x = self.dense1(x)
+        x = self.relu1(x)
+        x = self.dense2(x)
+        x = self.relu2(x)
+        x = self.dense3(x)
+        #x = self.relu3(x)
+        batch_num = x.shape[0]
+        x = x.view(batch_num, 3, self.bins_num)
+        x = self.softMax(x) # dim = [32,60]
+        #x = x.view((-1, 512))
+        return x
+
 class CelebaRegressor(torch.nn.Module):
-    def __init__(self):
+    def __init__(self,num_input_features = 2048):
         super(CelebaRegressor,self).__init__()
         '''
         self.flatten = torch.nn.Flatten()
@@ -104,7 +142,8 @@ class CelebaRegressor(torch.nn.Module):
         self.dense3 = torch.nn.Linear(2048, 512)
         '''
         self.flatten = torch.nn.Flatten()
-        self.dense1 = torch.nn.Linear(2048,256)  # pool layer2048 = 2048X1X1
+        self.num_input_features = num_input_features
+        self.dense1 = torch.nn.Linear(num_input_features,256)  # pool layer2048 = 2048X1X1
         self.bn1 = torch.nn.BatchNorm1d(num_features=256)
         self.dense2 = torch.nn.Linear(256, 256)
         self.bn2 = torch.nn.BatchNorm1d(num_features=256)
@@ -124,8 +163,10 @@ class CelebaRegressor(torch.nn.Module):
         #x = x.view((-1, 18, 512))
         return x
 
+
+
 class LandMarksRegressor(torch.nn.Module):
-    def __init__(self, landmark_num = 68):
+    def __init__(self, landmark_num = 68, num_input_features = 2048):
         super(LandMarksRegressor,self).__init__()
         '''
         self.flatten = torch.nn.Flatten()
@@ -136,8 +177,9 @@ class LandMarksRegressor(torch.nn.Module):
         self.dense3 = torch.nn.Linear(2048, 512)
         '''
         self.landmark_num = landmark_num*2
+        self.num_input_features = num_input_features
         self.flatten = torch.nn.Flatten()
-        self.dense1 = torch.nn.Linear(2048,256)  # pool layer2048 = 2048X1X1
+        self.dense1 = torch.nn.Linear(num_input_features,256)  # pool layer2048 = 2048X1X1
         self.bn1 = torch.nn.BatchNorm1d(num_features=256)
         self.dense2 = torch.nn.Linear(256, 256)
         self.bn2 = torch.nn.BatchNorm1d(num_features=256)
@@ -202,6 +244,162 @@ class ImageLatentDataset(torch.utils.data.Dataset):
 
         return image
 
+class ImageLabelDataset(torch.utils.data.Dataset):
+    def __init__(self, filenames, labels, image_size=256, transforms = None):
+        self.filenames = filenames
+        self.labels = labels
+        self.image_size = image_size
+        self.transforms = transforms
+
+    def __len__(self):
+        return len(self.filenames)
+
+    def __getitem__(self, index):
+        filename = self.filenames[index]
+        label = self.labels[index]
+
+        image = self.load_image(filename)
+        image = Image.fromarray(np.uint8(image))
+
+
+        image = self.transforms(image)
+
+        return image, label
+
+    def load_image(self, filename):
+        image = np.asarray(Image.open(filename))
+
+        return image
+
+
+class ImageToLandmarks_batch(torch.nn.Module):
+    def __init__(self, landmark_num = 68):
+        super().__init__()
+
+        self.landmark_num = landmark_num*2
+        self.conv1 = torch.nn.Conv2d(3, 64, kernel_size=3,stride=1, padding = 1)
+        self.conv1_bn = torch.nn.BatchNorm2d(64)
+        self.pool1 = torch.nn.MaxPool2d(kernel_size=2,
+                     stride=2)
+
+        self.conv2 = torch.nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.conv2_bn = torch.nn.BatchNorm2d(128)
+        self.pool2 = torch.nn.MaxPool2d(kernel_size=2,
+                                        stride=2)
+
+        self.conv3 = torch.nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
+        self.conv3_bn = torch.nn.BatchNorm2d(256)
+        self.pool3 = torch.nn.MaxPool2d(kernel_size=2,
+                                        stride=2)
+
+        self.conv4 = torch.nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1)
+        self.conv4_bn = torch.nn.BatchNorm2d(512)
+        self.pool4 = torch.nn.MaxPool2d(kernel_size=2,
+                                        stride=2)
+        self.conv5 = torch.nn.Conv2d(512, 1024, kernel_size=3, stride=1, padding=1)
+        self.conv5_bn = torch.nn.BatchNorm2d(1024)
+        self.pool5 = torch.nn.MaxPool2d(kernel_size=2,
+                                        stride=2)
+
+        self.dense1 = torch.nn.Linear(4096, 1024)
+        #self.dense1 = torch.nn.Linear(4096 * 1024, 1024)
+        self.dense2 = torch.nn.Linear(1024, self.landmark_num)
+
+
+    def forward(self, image):
+        # x = image.view(image.size(0), -1)
+        x = self.conv1(image)
+        x = self.conv1_bn(x)
+        x = F.relu(x)
+        x = self.pool1(x)
+
+        x = self.conv2(x)
+        x = self.conv2_bn(x)
+        x = F.relu(x)
+        x = self.pool2(x)
+
+        x = self.conv3(x)
+        x = self.conv3_bn(x)
+        x = F.relu(x)
+        x = self.pool3(x)
+
+        x = self.conv4(x)
+        x = self.conv4_bn(x)
+        x = F.relu(x)
+        x = self.pool4(x)
+
+        x = self.conv5(x)
+        x = self.conv5_bn(x)
+        x = F.relu(x)
+        x = self.pool5(x)
+
+        x = x.view(x.shape[0], -1)
+        x = self.dense1(x)
+        x = F.relu(x)
+        x = self.dense2(x)
+
+        return x
+
+class ImageToLandmarks(torch.nn.Module):
+    def __init__(self, landmark_num = 68):
+        super().__init__()
+
+        self.landmark_num = landmark_num*2
+        self.conv1 = torch.nn.Conv2d(3, 64, kernel_size=3,stride=1, padding = 1)
+        self.pool1 = torch.nn.MaxPool2d(kernel_size=2,
+                     stride=2)
+
+        self.conv2 = torch.nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.pool2 = torch.nn.MaxPool2d(kernel_size=2,
+                                        stride=2)
+
+        self.conv3 = torch.nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
+        self.pool3 = torch.nn.MaxPool2d(kernel_size=2,
+                                        stride=2)
+
+        self.conv4 = torch.nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1)
+        self.pool4 = torch.nn.MaxPool2d(kernel_size=2,
+                                        stride=2)
+        self.conv5 = torch.nn.Conv2d(512, 1024, kernel_size=3, stride=1, padding=1)
+        self.pool5 = torch.nn.MaxPool2d(kernel_size=2,
+                                        stride=2)
+
+        self.dense1 = torch.nn.Linear(4096, 1024)
+        #self.dense1 = torch.nn.Linear(4096 * 1024, 1024)
+        self.dense2 = torch.nn.Linear(1024, self.landmark_num)
+
+
+    def forward(self, image):
+        # x = image.view(image.size(0), -1)
+        x = self.conv1(image)
+        x = F.relu(x)
+        x = self.pool1(x)
+
+        x = self.conv2(x)
+        x = F.relu(x)
+        x = self.pool2(x)
+
+        x = self.conv3(x)
+        x = F.relu(x)
+        x = self.pool3(x)
+
+        x = self.conv4(x)
+        x = F.relu(x)
+        x = self.pool4(x)
+
+        x = self.conv5(x)
+        x = F.relu(x)
+        x = self.pool5(x)
+
+        x = x.view(x.shape[0], -1)
+        x = self.dense1(x)
+        x = F.relu(x)
+        x = self.dense2(x)
+
+        return x
+
+
+
 
 class VGGLatentDataset(torch.utils.data.Dataset):
     def __init__(self, descriptors, dlatents):
@@ -216,4 +414,9 @@ class VGGLatentDataset(torch.utils.data.Dataset):
         dlatent = self.dlatents[index]
 
         return descriptors, dlatent
+
+
+
+
+
 

@@ -2,14 +2,18 @@ import numpy as np
 import cv2
 from PIL import Image
 
-def load_images(filenames):
+def load_images(filenames, transformation = None):
     # Images must all be of same shape.
     images = []
     for filename in filenames:
-        temp_image = np.asarray(Image.open(filename))
+        raw_image = Image.open(filename)
+        if transformation is not None:
+            raw_image = transformation(raw_image)
+        temp_image = np.asarray(raw_image)
         
         # Adjust channel dimension to work with torch.
-        temp_image = np.transpose(temp_image, (2,0,1))
+        if transformation is None:
+            temp_image = np.transpose(temp_image, (2,0,1))
         images.append(temp_image)
         images = np.array(images)
 

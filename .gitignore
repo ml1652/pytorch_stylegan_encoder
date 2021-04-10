@@ -12,13 +12,16 @@ alignment_image_for_test
 celeba_vggface2
 tesnsor_board_pose_regressor_model
 vgg_latent_model
-/*.pt
 zeros image
-/video.avi
-/*.pth
 .idea/dataSources.xml
-/*.jpg
-/*.png
 *.npy
 *.npz
 utilities/*.jpg
+
+*.pt
+*.pth
+*.jpg
+*.png
+*.mp4
+*.avi
+log.txt
