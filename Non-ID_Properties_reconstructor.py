@@ -82,7 +82,7 @@ def vgg_to_face_regreesor(latent_type, reference_image):
         #vgg_to_latent.load_state_dict(torch.load(r"C:\Users\Mingrui\Desktop\vgg_to_latent_WP_cosineloss.pt"))
         #vgg_to_latent.load_state_dict(torch.load(r"C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\Trained_model\vgg_to_latent_Testoldversion.pt"))
         #vgg_to_latent.load_state_dict(torch.load(r"C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\Trained_model\vgg_to_latent_WP.pt"))
-        vgg_to_latent.load_state_dict(torch.load(r"C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\Trained_model\vgg_to_latent_stylegancrop.pt"))
+        vgg_to_latent.load_state_dict(torch.load('Trained_model/vgg_to_latent_stylegancrop.pt'))
         #vgg_to_latent.load_state_dict(torch.load(r"C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\Trained_model\vgg_to_latent_stylegancrop_cosinesimiliarty.pt"))
 
     elif latent_type == 'Z':
