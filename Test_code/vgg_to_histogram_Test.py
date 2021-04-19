@@ -28,7 +28,7 @@ vgg_processing = VGGFaceProcessing()
 vgg_face_dag = resnet50_scratch_dag(r'C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\resnet50_scratch_dag.pth').cuda().eval()
 
 
-bins_num = 25
+bins_num = 10
 sigma_choice = 1.85
 vgg_to_hist_regressor= VGGToHist(bins_num).cuda()
 vgg_to_hist_regressor.load_state_dict(torch.load(r"C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\Trained_model\vgg_to_hist_bins=%s.pt" %str(bins_num)))

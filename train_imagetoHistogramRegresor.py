@@ -24,12 +24,13 @@ from models.vgg_face2 import resnet50_scratch_dag
 # plt.hist(hist ,bins='auto', density=True)
 # plt.show()
 
-
+loss_type = 'MSE'
+#loss_type = 'EMD'
 num_trainsets = 47800
 Inserver = False
-epochs = 200
+epochs = 3000
 validation_loss = 0.0
-bins_num = 25
+bins_num = 10
 #lr=0.00001
 lr=0.000001
 if Inserver == True:
@@ -67,7 +68,7 @@ def generate_vgg_descriptors(filenames):
     return np.concatenate(descriptors, axis=0)
 
 #np.save(save_path, np.concatenate(descriptors, axis=0))
-# ######################################################
+#######################################################
 
 class SoftHistogram(torch.nn.Module):
     def __init__(self, bins, min, max, sigma):
@@ -222,9 +223,12 @@ validation_dataset = hist_Dataset(validation_descriptors, validation_hist)
 train_generator = torch.utils.data.DataLoader(train_dataset, batch_size=32)
 validation_generator = torch.utils.data.DataLoader(validation_dataset, batch_size=32)
 
-vgg_to_hist = VGGToHist(bins_num).cuda()
+vgg_to_hist = VGGToHist(bins_num,BN = True, N_HIDDENS = 5,N_NEURONS = 256).cuda()
+#print(vgg_to_hist)
+
 optimizer = torch.optim.Adam(vgg_to_hist.parameters(),lr)
-criterion = torch.nn.MSELoss()
+if loss_type =='MSE':
+    criterion = torch.nn.MSELoss()
 
 class earth_mover_distance_(torch.nn.Module):
     def _init_(self):
@@ -252,8 +256,10 @@ for epoch in progress_bar:
 
         vgg_descriptors, hists = vgg_descriptors.cuda(), hists.cuda()
         pred_hist = vgg_to_hist(vgg_descriptors)
-        #loss = criterion(pred_hist, hists)
-        loss = EMDLoss(pred_hist, hists)
+        if loss_type == 'MSE':
+            loss = criterion(pred_hist, hists)
+        elif loss_type == 'EMD':
+            loss = EMDLoss(pred_hist, hists)
         loss.backward()
 
         optimizer.step()
@@ -271,8 +277,10 @@ for epoch in progress_bar:
         with torch.no_grad():
             vgg_descriptors, hists = vgg_descriptors.cuda(), hists.cuda()
             pred_hist = vgg_to_hist(vgg_descriptors)
-            #loss = criterion(pred_hist, hists)
-            loss = EMDLoss(pred_hist, hists)
+            if loss_type == 'MSE':
+                loss = criterion(pred_hist, hists)
+            elif loss_type =='EMD':
+                loss = EMDLoss(pred_hist, hists)
             validation_loss += loss.item()
 
     validation_loss = validation_loss / i
@@ -299,3 +307,5 @@ if  Inserver == True:
     torch.save(vgg_to_hist.state_dict(), '/scratch/staff/ml1652/StyleGAN_Reconstuction_server/vgg_to_hist_bins=' +str(bins_num)+'.pt')
 else:
     torch.save(vgg_to_hist.state_dict(), 'C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/Trained_model/vgg_to_hist_bins=' +str(bins_num)+'.pt')
+
+

@@ -3,7 +3,7 @@ from torchvision.models import resnet50
 from PIL import Image
 import numpy as np
 import torch.nn.functional as F
-
+from torch.nn import init
 
 class ImageToLatent(torch.nn.Module):
     def __init__(self, image_size=256):
@@ -95,7 +95,7 @@ class PoseRegressor(torch.nn.Module):
         x = x.view((-1, self.output_count))
         return x
 
-class VGGToHist(torch.nn.Module):
+class VGGToHist__(torch.nn.Module):
     def __init__(self, bins_num = 20):
         super(VGGToHist,self).__init__()
         '''
@@ -108,22 +108,61 @@ class VGGToHist(torch.nn.Module):
         '''
         self.bins_num = bins_num
         self.flatten = torch.nn.Flatten()
-        self.dense1 = torch.nn.Linear(2048, 2048)  # pool layer2048 = 2048X1X1
+        self.dense1 = torch.nn.Linear(2048, 64)  # pool layer2048 = 2048X1X1
+        # self.bn1 = torch.nn.BatchNorm1d(num_features=512)
         self.relu1 = torch.nn.ReLU()
-        self.dense2 = torch.nn.Linear(2048, 2048)
+        self.dense2 = torch.nn.Linear(64,64)
+        # self.bn2 = torch.nn.BatchNorm1d(num_features=512)
         self.relu2 = torch.nn.ReLU()
-        #self.dense3 = torch.nn.Linear(2048, 512)
-        self.dense3 = torch.nn.Linear(2048, (3*bins_num))
+        self.dense3 = torch.nn.Linear(64, 64)
+        # self.bn3 = torch.nn.BatchNorm1d(num_features=512)
         self.relu3 = torch.nn.ReLU()
+        self.dense4 = torch.nn.Linear(64, 64)
+        # self.bn4 = torch.nn.BatchNorm1d(num_features=512)
+        self.relu4 = torch.nn.ReLU()
+        self.dense5 = torch.nn.Linear(64,(3*bins_num))
+        # self.bn5 = torch.nn.BatchNorm1d(num_features=2048)
+        # self.relu5 = torch.nn.ReLU()
+        # self.dense6 = torch.nn.Linear(2048, 2048)
+        # self.relu6 = torch.nn.ReLU()
+        # self.dense7 = torch.nn.Linear(2048, 2048)
+        # self.relu7 = torch.nn.ReLU()
+        # self.dense8 = torch.nn.Linear(2048, 2048)
+        # self.relu8 = torch.nn.ReLU()
+        # self.dense9 = torch.nn.Linear(2048, 2048)
+        # self.relu9 = torch.nn.ReLU()
+        # self.dense10 = torch.nn.Linear(2048, 2048)
+        # self.relu10 = torch.nn.ReLU()
+        # self.dense11 = torch.nn.Linear(2048, (3*bins_num))
+        # self.relu11 = torch.nn.ReLU()
         self.softMax = torch.nn.Softmax(dim = 2)
     def forward(self, latent):
         x = self.flatten(latent)
         x = self.dense1(x)
+        #x = self.bn1(x)
         x = self.relu1(x)
         x = self.dense2(x)
+        #x = self.bn2(x)
         x = self.relu2(x)
         x = self.dense3(x)
-        #x = self.relu3(x)
+        #x = self.bn3(x)
+        x = self.relu3(x)
+        x = self.dense4(x)
+        #x = self.bn4(x)
+        x = self.relu4(x)
+        x = self.dense5(x)
+        # x = self.relu5(x)
+        # x = self.dense6(x)
+        # x = self.relu6(x)
+        # x = self.dense7(x)
+        # x = self.relu7(x)
+        # x = self.dense8(x)
+        # x = self.relu8(x)
+        # x = self.dense9(x)
+        # x = self.relu9(x)
+        # x = self.dense10(x)
+        # x = self.relu10(x)
+        # x = self.dense11(x)
         batch_num = x.shape[0]
         x = x.view(batch_num, 3, self.bins_num)
         x = self.softMax(x) # dim = [32,60]
@@ -399,8 +438,6 @@ class ImageToLandmarks(torch.nn.Module):
         return x
 
 
-
-
 class VGGLatentDataset(torch.utils.data.Dataset):
     def __init__(self, descriptors, dlatents):
         self.descriptors = descriptors
@@ -416,7 +453,121 @@ class VGGLatentDataset(torch.utils.data.Dataset):
         return descriptors, dlatent
 
 
+Layers = [3, 4, 6, 3]
+class Block(torch.nn.Module):
+    def __init__(self, in_channels, filters, stride=1, is_1x1conv=False):
+        super(Block, self).__init__()
+        filter1, filter2, filter3 = filters
+        self.is_1x1conv = is_1x1conv
+        self.relu = torch.nn.ReLU(inplace=True)
+        self.conv1 = torch.nn.Sequential(
+            torch.nn.Conv2d(in_channels, filter1, kernel_size=1, stride=stride,bias=False),
+            torch.nn.BatchNorm2d(filter1),
+            torch.nn.ReLU()
+        )
+        self.conv2 = torch.nn.Sequential(
+            torch.nn.Conv2d(filter1, filter2, kernel_size=3, stride=1, padding=1,  bias=False),
+            torch.nn.BatchNorm2d(filter2),
+            torch.nn.ReLU()
+        )
+        self.conv3 = torch.nn.Sequential(
+            torch.nn.Conv2d(filter2, filter3, kernel_size=1, stride=1,  bias=False),
+            torch.nn.BatchNorm2d(filter3),
+        )
+        if is_1x1conv:
+            self.shortcut = torch.nn.Sequential(
+                torch.nn.Conv2d(in_channels, filter3, kernel_size=1, stride=stride,  bias=False),
+                torch.nn.BatchNorm2d(filter3)
+            )
+    def forward(self, x):
+        x_shortcut = x
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        if self.is_1x1conv:
+            x_shortcut = self.shortcut(x_shortcut)
+        x = x + x_shortcut
+        x = self.relu(x)
+        return x
 
+class VGGToHist(torch.nn.Module):
+    def __init__(self, bins_num = 20, BN = False, N_HIDDENS = 10, N_NEURONS = 64):
+        super(VGGToHist,self).__init__()
+        '''
+        self.flatten = torch.nn.Flatten()
+        #self.dense1 = torch.nn.Linear(100352, 224) # 100352 = 128X28X28
+        self.dense1 = torch.nn.Linear(2048, 2048)  # pool layer2048 = 2048X1X1
+        #self.dense2 = torch.nn.Linear(224, (18 * 512))
+        self.dense2 = torch.nn.Linear(2048,  2048)
+        self.dense3 = torch.nn.Linear(2048, 512)
+        '''
+        self.dobn = BN
+        self.fcs=[]
+        self.bns=[]
+        self.drops=[]
+        self.bins_num = bins_num
+        self.flatten = torch.nn.Flatten()
+        self.N_HIDDENS = N_HIDDENS
+        self.N_NEURONS = N_NEURONS
+        self.relu = torch.nn.ReLU()
+        for i in range(N_HIDDENS):
+            #self.in_putsize = 2048 if i == 0 else N_NEURONS
+            if i == 0:
+                self.in_putsize = 2048
+            elif i == N_HIDDENS-1:
+                N_NEURONS = (3 * bins_num)
+            else:
+                N_NEURONS
+            fc = torch.nn.Linear(self.in_putsize,N_NEURONS,bias=False)
+            self.in_putsize = N_NEURONS
+            setattr(self,'fc%i'%i,fc)
+            self.fcs.append(fc)
+            if self.dobn:
+                    self.in_putsize = N_NEURONS
+                    bn = torch.nn.BatchNorm1d(self.in_putsize)
+                    setattr(self, 'bn%i'%i, bn)
+                    self.bns.append(bn)
+
+        self.output = torch.nn.Linear(self.in_putsize,(3*bins_num))
+        self.softMax = torch.nn.Softmax(dim = 2)
+
+    def forward(self, x):
+        x  = self.flatten(x)
+        last_layer = self.N_HIDDENS - 1
+        for i in range(self.N_HIDDENS):
+            if last_layer == i:
+                x = self.fcs[i](x)
+                batch_num = x.shape[0]
+                x = x.view(batch_num, 3, self.bins_num)
+                x = self.softMax(x)
+                break
+            else:
+                x = self.fcs[i](x)
+            if self.dobn:
+                x = self.bns[i](x)
+                x = self.relu(x)
+            else:
+                x= self.relu(x)
+        return x
+
+
+    # def forward(self, latent):
+    #     x = self.flatten(latent)
+    #     x = self.dense1(x)
+    #     x = self.relu1(x)
+    #     x = self.dense2(x)
+    #     x = self.relu2(x)
+    #     x = self.dense3(x)
+    #     x = self.relu3(x)
+    #     x = self.dense4(x)
+    #     x = self.relu4(x)
+    #     x = self.dense5(x)
+    #
+    #     batch_num = x.shape[0]
+    #     x = x.view(batch_num, 3, self.bins_num)
+    #     x = self.softMax(x) # dim = [32,60]
+    #     #x = x.view((-1, 512))
+    #     return x
 
 
 

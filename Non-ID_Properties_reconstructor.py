@@ -36,12 +36,12 @@ parser.add_argument("dlatent_path", help="Filepath to save the dlatent (WP) at."
 parser.add_argument("--weight_landmarkloss", default=1 , help="the weight of landamrkloss in loss  function",type= float)
 parser.add_argument("--Inserver", default=False, help="Number of optimizations steps.", type=bool)
 parser.add_argument("--latent_type", default='WP', help="type of StyleGAN's latent.", type=str)
-parser.add_argument("--vggface_to_latent", default= False , help="Use vgg_to_latent model to intialise latent", type=bool)
+parser.add_argument("--vggface_to_latent", default= True , help="Use vgg_to_latent model to intialise latent", type=bool)
 parser.add_argument("--vgg_to_hist", default= True , help="Use vgg_to_hist model ", type=bool)
-parser.add_argument("--weight_histloss", default=0.01, help="the weight of vgg_to_histogram in loss  function",type= float)
+parser.add_argument("--weight_histloss", default=0.1, help="the weight of vgg_to_histogram in loss  function",type= float) # deflault = 0.01
 args, other = parser.parse_known_args()
 
-IdlossAndLandmarkTraingSteps = args.iterations - 1500
+IdlossAndLandmarkTraingSteps = args.iterations - 500
 lagrangianloss = False
 
 if  args.Inserver == False:
@@ -707,7 +707,7 @@ def draw_SoftHistTest(hist_target, hist_pred):
     plt.title('channel r')
     plt.xlabel('bin_num')
     plt.ylabel('pixel_num')
-    plt.plot(hist_target[0], color="green", linestyle='-', label='target')
+    plt.plot(hist_target[0], color="green", linestyle='-', label='target_from_HistRegressor')
     plt.plot(hist_pred[0], color="red", linestyle='-', label='Predict')
     plt.legend()
 
@@ -773,7 +773,7 @@ def draw_histogram_target_generateImg(reference_img, generated_img):
     plt.title('channel r')
     plt.xlabel('bin_num')
     plt.ylabel('pixel_num')
-    plt.plot(hist_target[0], color="green", linestyle='-', label='target')
+    plt.plot(hist_target[0], color="green", linestyle='-', label='targetImg_histc')
     plt.plot(hist_pred[0], color="red", linestyle='-', label='Predict')
     plt.legend()
 
@@ -821,7 +821,7 @@ criterion1 = torch.nn.L1Loss()
 criterion2 = torch.nn.MSELoss()
 #criterion2 = Landmark_loss()
 if args.vgg_to_hist == True:
-    bins_num = 25
+    bins_num = 10
     #criterion3 = torch.nn.MSELoss()
 
 image_size = 1024
@@ -855,7 +855,7 @@ L_target = feed_vggFeatures_into_LandmarkRegressor(X_target)
 
 def feed_vggFeatures_into_histogramRegressor(X_target,bins_num):
 
-    features_to_hist = VGGToHist(bins_num).cuda().eval()
+    features_to_hist = VGGToHist(bins_num,BN = True, N_HIDDENS = 5,N_NEURONS = 256).cuda().eval()
     hist_file_name = 'vgg_to_hist_bins=' + str(bins_num)+'.pt'
     if args.Inserver == False:
         features_to_hist.load_state_dict(torch.load(
@@ -919,7 +919,6 @@ for step in progress_bar:
         ########################################
         #hist_l = criterion3(hist_target,hist_pred) # hist_perd = hist_target:[1,3,bin_num]
 
-
     if lagrangianloss == True:
         Landmark_l_stopgradient = Landmark_l.detach()
         damp = 10*(epsilon - Landmark_l_stopgradient)
@@ -955,16 +954,23 @@ for step in progress_bar:
         lambdA.requires_grad = True
     else:
         if args.vgg_to_hist == True:
-            if step <= IdlossAndLandmarkTraingSteps:
-                Id_l = criterion1(X_target, X_pred)
-                Landmark_l = criterion2(L_target, L_pred)
-                b = args.weight_landmarkloss
-
-                loss = Id_l +  b * Landmark_l
-            else:
-                hist_l = EMDLoss(hist_target, hist_pred.unsqueeze(0))  # hist_perd = hist_target:[1,3,bin_num]
-                c = args.weight_histloss
-                loss = c*hist_l
+            # if step <= IdlossAndLandmarkTraingSteps:
+            #     Id_l = criterion1(X_target, X_pred)
+            #     Landmark_l = criterion2(L_target, L_pred)
+            #     b = args.weight_landmarkloss
+            #
+            #     loss = Id_l +  b * Landmark_l
+            # else:
+            #     hist_l = EMDLoss(hist_target, hist_pred.unsqueeze(0))  # hist_perd = hist_target:[1,3,bin_num]
+            #     c = args.weight_histloss
+            #     loss = c*hist_l
+            Id_l = criterion1(X_target, X_pred)
+            Landmark_l = criterion2(L_target, L_pred)
+            hist_l = EMDLoss(hist_target, hist_pred.unsqueeze(0))
+            b = args.weight_landmarkloss
+            c = args.weight_histloss
+            #loss = Id_l + b * Landmark_l + c*hist_l
+            loss = c * hist_l
                 #loss = Id_l + c * hist_l
             loss.backward(retain_graph=True)
             optimizer.step()
@@ -976,12 +982,15 @@ for step in progress_bar:
             loss.backward(retain_graph=True)
             optimizer.step()
             loss = loss.item()
-    if step <= IdlossAndLandmarkTraingSteps:
-        Landmark_l =  Landmark_l.item()
-        Id_l = Id_l.item()
-    else:
-        if args.vgg_to_hist == True:
-            hist_l = hist_l.item()
+    # if step <= IdlossAndLandmarkTraingSteps:
+    #     Landmark_l =  Landmark_l.item()
+    #     Id_l = Id_l.item()
+    # else:
+    #     if args.vgg_to_hist == True:
+    #         hist_l = hist_l.item()
+    Id_l = Id_l.item()
+    Landmark_l = Landmark_l.item()
+    hist_l = hist_l.item()
 
     if count == int(args.iterations):
         if args.Inserver == False:
@@ -996,12 +1005,14 @@ for step in progress_bar:
         draw_targetLandmarkPoint(reference_image, L_target)
 
     if args.vgg_to_hist == True:
-        #progress_bar.set_description( "Step: {}, Id_loss: {}, Landmark_loss: {}, hist_loss: {}".format(step, Id_l, Landmark_l, hist_l))
-        if step <= IdlossAndLandmarkTraingSteps:
-            progress_bar.set_description("Step: {}, Id_loss: {}, Landmark_loss: {}".format(step, Id_l, Landmark_l))
-        else:
-            progress_bar.set_description("Step: {}, Id_loss: {}, Landmark_loss: {}, hist_loss: {}".format(step, Id_l, Landmark_l,hist_l))
-            hist_l_plot.append(hist_l)
+        progress_bar.set_description( "Step: {}, Id_loss: {}, Landmark_loss: {}, hist_loss: {}".format(step, Id_l, Landmark_l, hist_l))
+        # if step <= IdlossAndLandmarkTraingSteps:
+        #     progress_bar.set_description("Step: {}, Id_loss: {}, Landmark_loss: {}".format(step, Id_l, Landmark_l))
+        # else:
+        #     progress_bar.set_description("Step: {}, Id_loss: {}, Landmark_loss: {}, hist_loss: {}".format(step, Id_l, Landmark_l,hist_l))
+        hist_l_plot.append(hist_l)
+
+
 
     else:
         progress_bar.set_description("Step: {}, Id_loss: {}, Landmark_loss: {}".format(step,Id_l,Landmark_l ))
