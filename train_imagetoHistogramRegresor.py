@@ -27,24 +27,29 @@ from models.vgg_face2 import resnet50_scratch_dag
 loss_type = 'MSE'
 #loss_type = 'EMD'
 num_trainsets = 47800
-Inserver = False
-epochs = 3000
+Inserver = bool(os.environ['IN_SERVER']) if ('IN_SERVER' in os.environ) else False
+epochs = int(os.environ['EPOCHES']) if ('EPOCHES' in os.environ) else 5000
 validation_loss = 0.0
 bins_num = 10
+
+N_HIDDENS = int(os.environ['N_HIDDENS']) if ('N_HIDDENS' in os.environ) else 2
+N_NEURONS =  int(os.environ['N_NEURONS']) if ('N_NEURONS' in os.environ) else 128
 #lr=0.00001
+
 lr=0.000001
 if Inserver == True:
     import matplotlib
     matplotlib.use('Agg')
-    directory = "/scratch/staff/ml1652/StyleGAN_Reconstuction_server/Croped_StyleGAN_Datasets/align_size(224,224)_move(0.250,0.000)_face_factor(0.800)_jpg/data/"
+    directory = "./Croped_StyleGAN_Datasets/align_size(224,224)_move(0.250,0.000)_face_factor(0.800)_jpg/data/"
 else:
-    directory = "C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/Croped_StyleGAN_Datasets/align_size(224,224)_move(0.250,0.000)_face_factor(0.800)_jpg/data/"
+    directory = "./Croped_StyleGAN_Datasets/align_size(224,224)_move(0.250,0.000)_face_factor(0.800)_jpg/data/"
     #directory = "C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/InterFaceGAN/dataset_directory/"
 filenames = sorted(glob(directory + "*.jpg"))
-dlatents = np.load(directory + "WP.npy")
+dlatents = np.load(directory + "wp.npy")
 final_dlatents = []
 for i in filenames :
-    name = int((i.split('\\')[-1]).split('.')[0])
+    name = int(os.path.splitext(os.path.basename(i))[0])
+    # name = int((i.split('\\')[-1]).split('.')[0])
     final_dlatents.append(dlatents[name])
 dlatents = np.array(final_dlatents)
 train_dlatents = dlatents[0:num_trainsets]
@@ -56,7 +61,7 @@ def generate_vgg_descriptors(filenames):
         vgg_face_dag = resnet50_scratch_dag(
             '/scratch/staff/ml1652/StyleGAN_Reconstuction_server/Pretrained_model/resnet50_scratch_dag.pth').cuda().eval()
     else:
-        vgg_face_dag = resnet50_scratch_dag(r'C:\Users\Mingrui\Desktop\Github\pytorch_stylegan_encoder\resnet50_scratch_dag.pth').cuda().eval()
+        vgg_face_dag = resnet50_scratch_dag('./resnet50_scratch_dag.pth').cuda().eval()
     descriptors = []
     vgg_processing = VGGFaceProcessing()
     for i in filenames:
@@ -120,7 +125,7 @@ def plot_hist(hist_soft, histc,filenames):
     plt.ylabel('pixel_num')
     plt.plot(hist_soft, color="red", linestyle='-', label='hist_soft')
 
-    path_ = 'C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/diagram/plot_histc_'
+    path_ = './diagram/plot_histc_'
     img_name = filenames.split('\\')[-1]
     plot_path = path_ + img_name
     plt.savefig(plot_path)
@@ -223,7 +228,7 @@ validation_dataset = hist_Dataset(validation_descriptors, validation_hist)
 train_generator = torch.utils.data.DataLoader(train_dataset, batch_size=32)
 validation_generator = torch.utils.data.DataLoader(validation_dataset, batch_size=32)
 
-vgg_to_hist = VGGToHist(bins_num,BN = True, N_HIDDENS = 5,N_NEURONS = 256).cuda()
+vgg_to_hist = VGGToHist(bins_num,BN = True, N_HIDDENS = N_HIDDENS,N_NEURONS = N_NEURONS).cuda()
 #print(vgg_to_hist)
 
 optimizer = torch.optim.Adam(vgg_to_hist.parameters(),lr)
@@ -299,13 +304,13 @@ plt.subplot(2, 1, 2)
 plt.plot( y2, '.-')
 plt.xlabel('validation loss vs. epoches')
 plt.ylabel('validation loss')
-save_dir = "C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/diagram/vgg_to_Histogram_accuracy_loss_lr=" +str(lr)+ ".jpg"
+save_dir = "./diagram/vgg_to_Histogram_accuracy_loss_lr=" +str(lr)+ str(bins_num) + '_N_HIDDENS='+str(N_HIDDENS) + '_NEURONS='+str(N_NEURONS)+".jpg"
 plt.savefig(save_dir)
 #plt.show()
 
 if  Inserver == True:
-    torch.save(vgg_to_hist.state_dict(), '/scratch/staff/ml1652/StyleGAN_Reconstuction_server/vgg_to_hist_bins=' +str(bins_num)+'.pt')
+    torch.save(vgg_to_hist.state_dict(), '/scratch/staff/ml1652/StyleGAN_Reconstuction_server/vgg_to_hist_bins=' +str(bins_num) + '_N_HIDDENS='+str(N_HIDDENS) + '_NEURONS='+str(N_NEURONS)+'.pt')
 else:
-    torch.save(vgg_to_hist.state_dict(), 'C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/Trained_model/vgg_to_hist_bins=' +str(bins_num)+'.pt')
+    torch.save(vgg_to_hist.state_dict(), 'C:/Users/Mingrui/Desktop/Github/pytorch_stylegan_encoder/Trained_model/vgg_to_hist_bins=' + str(bins_num) +'_HIDDENS='+str(N_HIDDENS) + '_NEURONS='+str(N_NEURONS)+'.pt')
 
 
